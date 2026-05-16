@@ -17,7 +17,7 @@ response  = client.chat.completions.create(
     messages=[
         {
             "role":"user",
-            "content":"Explain what a vector database is in one sentence."
+            "content":"Explain how to make a enterpise rag system."
         }
     ]
 )
