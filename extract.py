@@ -1,18 +1,23 @@
-import fitz
+# import fitz
+from liteparse import LiteParse
 import chromadb
 from pathlib import Path
 from sentence_transformers import SentenceTransformer
 
 # Step 1: Open the Document
 # Define your file path (e.g., pdf_path = "test.pdf")
-pdf_path = Path("test.pdf")
-print(pdf_path)
+parser = LiteParse()
+
+# pdf_path = Path("test.pdf")
+pdf_path = "test.pdf"
+result = parser.parse(pdf_path)
 # Create a 'document' object by passing the path into fitz.open()
-doc = fitz.open(pdf_path)
+# doc = fitz.open(pdf_path)
 # Step 2: Select the Target Page
 # PDFs are essentially lists of pages. 
 # Create a 'page' variable and access the first page of your document object using index [0]
-extracted_text = doc[0].get_text()
+# extracted_text = doc[0].get_text()
+extracted_text  = result.text
 # Step 3: Extract the Text
 # Call the .get_text() method on your 'page' variable and store the result in a new variable
 # Step 4: Output
@@ -66,7 +71,7 @@ chunk_ids = [f"chunk_{i}" for i in range(len(chunks))]
 
 # 4. Insert the data into the database
 print("Inserting chunks and embeddings into the database...")
-collection.add(
+collection.upsert(
     ids=chunk_ids,
     embeddings=embeddings,      # The 384-dimension math arrays
     documents=chunks            # The raw English text (so we can read it later)
