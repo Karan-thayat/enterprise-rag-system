@@ -8,7 +8,7 @@ client = Groq()
 file = open("facts.txt","r")
 content = file.read()
 
-question = "What is my name"
+question = "What is melodi"
 
 augmented_prompt = f"Context information is below.\n-----\n{content}\n----\nGiven the context information answer the following question:{question}"
 
