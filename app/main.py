@@ -16,8 +16,12 @@ llm_client = LLMClient()
 parser = DocumentParser() # <--- We are waking the parser up now!
 
 # 3. Define the Question Request model
+class Message(BaseModel):
+    role: str
+    content: str
 class QuestionRequest(BaseModel):
     question: str
+    history: list[Message]=[]
 
 # 4. The Upload Endpoint (NEW)
 @app.post("/upload")
@@ -59,8 +63,18 @@ async def upload_pdf(file: UploadFile = File(...)):
 @app.post("/ask")
 async def ask_question(request: QuestionRequest):
     try:
+        # Search DB using the new question
         context = db_client.search(request.question)
-        answer = llm_client.generate_answer(context_text=context, question=request.question)
+        
+        # Convert Pydantic objects to standard Python dictionaries for Groq
+        history_dicts = [{"role": msg.role, "content": msg.content} for msg in request.history]
+        
+        # Generate the answer with memory!
+        answer = llm_client.generate_answer(
+            context_text=context, 
+            question=request.question,
+            chat_history=history_dicts
+        )
         
         return {
             "status": "success",
