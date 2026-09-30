@@ -1,25 +1,35 @@
+from dataclasses import dataclass
+
 from liteparse import LiteParse
 
-class DocumentParser:
-    def __init__(self, chunk_size=1000, chunk_overlap=200):
-        # Initialize the LiteParse engine
-        self.parser = LiteParse()
-        self.chunk_size = chunk_size
-        self.chunk_overlap = chunk_overlap
 
-    def process_pdf(self, file_path: str) -> list[str]:
+@dataclass(frozen=True)
+class Page:
+    number: int  # 1-based page number
+    text: str
+
+
+class DocumentParser:
+    """Extracts layout-preserving text from PDFs, page by page, with LiteParse.
+
+    LiteParse runs locally (a Node.js CLI) and places text by its coordinates on
+    the page, so table rows and columns stay aligned. Blocks that sit side by side
+    (two text columns, a caption beside a paragraph) come out interleaved line by
+    line. With ``ocr_enabled``, text inside images (scanned pages, figures) is
+    recovered with Tesseract OCR.
+    """
+
+    def __init__(self, ocr_enabled: bool = True, timeout_s: float = 300.0, cli_path: str | None = None):
+        # Never let the server run `npm install -g` on its own; fail loudly instead.
+        self._parser = LiteParse(cli_path=cli_path, install_if_not_available=False)
+        self.ocr_enabled = ocr_enabled
+        self.timeout_s = timeout_s
+
+    def parse(self, pdf_bytes: bytes) -> list[Page]:
+        """Parses an in-memory PDF (streamed to the CLI over stdin, no temp files).
+
+        Raises liteparse.ParseError for unreadable files, TimeoutError when parsing
+        exceeds ``timeout_s`` and liteparse.CLINotFoundError when the CLI is missing.
         """
-        Takes a PDF path, extracts the layout-aware text, 
-        and returns a list of overlapping text chunks.
-        """
-        # Parse the document
-        result = self.parser.parse(file_path)
-        extracted_text = result.text
-        
-        # Chunk the text using the sliding window algorithm
-        chunks = []
-        for i in range(0, len(extracted_text), self.chunk_size - self.chunk_overlap):
-            chunk = extracted_text[i : i + self.chunk_size]
-            chunks.append(chunk)
-            
-        return chunks
+        result = self._parser.parse(pdf_bytes, ocr_enabled=self.ocr_enabled, timeout=self.timeout_s)
+        return [Page(number=page.pageNum, text=page.text) for page in result.pages]

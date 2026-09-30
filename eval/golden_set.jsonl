@@ -1,0 +1,40 @@
+{"id": "q01", "question": "What does the name MELODI stand for?", "evidence": [{"page": 2, "text": "MEmory with LOw DImension"}]}
+{"id": "q02", "question": "What is the key principle behind the MELODI architecture?", "evidence": [{"page": 1, "text": "hierarchical compression scheme across both transformer layers and context windows"}, {"page": 3, "text": "represent short-term and long-term memory through a hierarchical compression scheme"}]}
+{"id": "q03", "question": "Which research lab are the authors of the paper from?", "evidence": [{"page": 1, "text": "Google DeepMind"}]}
+{"id": "q04", "question": "How large is the long-term memory of the Memorizing Transformer baseline mentioned in the abstract?", "evidence": [{"page": 1, "text": "64K key-value pairs"}]}
+{"id": "q05", "question": "By what factor does MELODI shrink memory compared with the Memorizing Transformer?", "evidence": [{"page": 1, "text": "reducing the memory footprint by a factor of 8"}, {"page": 2, "text": "reducing memory usage by a factor of 8"}, {"page": 6, "text": "8-fold reduction in long-term memory size"}, {"page": 17, "text": "reducing memory consumption by a factor of 8"}]}
+{"id": "q06", "question": "What perplexity scores does MELODI reach on PG-19 and arXiv Math in the headline result?", "evidence": [{"page": 2, "text": "perplexity scores of 10.44 and 2.11"}]}
+{"id": "q07", "question": "How does an LSTM compress past information?", "evidence": [{"page": 2, "text": "recurrently compressing historical information into hidden states"}]}
+{"id": "q08", "question": "Which earlier model keeps long-term memory in every layer, paying a large memory overhead for it?", "evidence": [{"page": 2, "text": "incorporates long-term memory in every layer"}]}
+{"id": "q09", "question": "Unlike AutoCompressor or Gisting, what does MELODI compress?", "evidence": [{"page": 3, "text": "MELODI compresses network activations over multiple layers"}]}
+{"id": "q10", "question": "How do Position-Interpolation and YaRN extend the context size?", "evidence": [{"page": 3, "text": "extend context size by modifying the RoPE embedding"}]}
+{"id": "q11", "question": "What is the sandwich structure of MELODI's network?", "evidence": [{"page": 3, "text": "long-term compression layer inserted between multiple recurrent short-term compression"}]}
+{"id": "q12", "question": "How does a short-term layer compress the current context window into memory?", "evidence": [{"page": 4, "text": "appending summary tokens u after context tokens x"}]}
+{"id": "q13", "question": "How are the summary tokens initialised before the first layer?", "evidence": [{"page": 4, "text": "initialized from learnable embeddings"}]}
+{"id": "q14", "question": "How many parameters do the two linear token mixers of a short-term layer need?", "evidence": [{"page": 5, "text": "164K parameters, constituting a mere 1.3% of a transformer block"}]}
+{"id": "q15", "question": "How does MELODI's recurrence differ from the Block Recurrent Transformer's?", "evidence": [{"page": 5, "text": "while MELODI adds recurrence to all layers"}]}
+{"id": "q16", "question": "In what kind of queue are the long-term memory's key-value pairs stored?", "evidence": [{"page": 6, "text": "first-in-first-out (FIFO) queue"}]}
+{"id": "q17", "question": "How does the long-term layer combine cross-attention with self-attention?", "evidence": [{"page": 6, "text": "combined through a gating mechanism using a learnable scalar"}]}
+{"id": "q18", "question": "Why does MELODI store key-value pairs rather than tokens in its long-term memory?", "evidence": [{"page": 6, "text": "because they are repeatedly utilized in cross-attention"}]}
+{"id": "q19", "question": "Which datasets was MELODI evaluated on?", "evidence": [{"page": 7, "text": "three long-context datasets: PG19"}]}
+{"id": "q20", "question": "How many books does the PG19 dataset contain?", "evidence": [{"page": 7, "text": "28,752 English books"}]}
+{"id": "q21", "question": "How were short documents handled in the C4 experiments?", "evidence": [{"page": 7, "text": "filter out those with fewer than 4,096 tokens"}]}
+{"id": "q22", "question": "How many attention heads does the model use?", "evidence": [{"page": 7, "text": "8 attention heads with a dimensionality of 128 each"}]}
+{"id": "q23", "question": "Which framework and hardware were the models trained with?", "evidence": [{"page": 7, "text": "in JAX and Flax and trained from scratch for 500k steps on 32 TPU cores"}]}
+{"id": "q24", "question": "Why do the re-implemented baselines beat their originally reported results?", "evidence": [{"page": 8, "text": "instead of the inverse square root decay"}, {"page": 8, "text": "using dense cross-attention instead of top-k attention"}]}
+{"id": "q25", "question": "What perplexity does MELODI S192+L32 reach on PG-19 with the T5 vocabulary compared with Transformer XL?", "evidence": [{"page": 8, "text": "achieves a perplexity of 10.51, compared to 11.41 for Transformer XL"}]}
+{"id": "q26", "question": "How many floats does the L96 long-term memory configuration store?", "evidence": [{"page": 8, "text": "25.2 million floats"}]}
+{"id": "q27", "question": "How does perplexity change as the long-term memory covers more previous windows?", "evidence": [{"page": 9, "text": "up to 32 windows, after which the improvements level off"}]}
+{"id": "q28", "question": "What share of the total gain does the first long-term layer provide?", "evidence": [{"page": 10, "text": "73% of the total gain"}]}
+{"id": "q29", "question": "How much does summary branching improve perplexity?", "evidence": [{"page": 10, "text": "perplexity improvement of approximately 0.3"}, {"page": 10, "text": "consistent gain of approximately 0.3"}]}
+{"id": "q30", "question": "What do the authors see as the main limitation of their study?", "evidence": [{"page": 15, "text": "focus on training models from scratch"}]}
+{"id": "q31", "question": "How do the authors plan to integrate MELODI into pre-trained language models?", "evidence": [{"page": 15, "text": "explore techniques like LoRA"}]}
+{"id": "q32", "question": "How does YOCO implement its short-term memory?", "evidence": [{"page": 16, "text": "sliding-window attention across multiple self-decoder layers"}]}
+{"id": "q33", "question": "Which optimizer was used for training?", "evidence": [{"page": 17, "text": "We use Adafactor optimizer"}]}
+{"id": "q34", "question": "What dropout rate was applied during training?", "evidence": [{"page": 17, "text": "A dropout rate of 0.05"}]}
+{"id": "q35", "question": "What is the largest context window MELODI was trained with, and why not larger?", "evidence": [{"page": 18, "text": "unable to train MELODI with context windows exceeding 2048 tokens"}]}
+{"id": "q36", "question": "Which masking ratios were used for the masked next token prediction task?", "evidence": [{"page": 20, "text": "three masking ratios (0.125, 0.25, and 0.5)"}]}
+{"id": "q37", "question": "How does the masked next token prediction task differ from BERT's masking?", "evidence": [{"page": 20, "text": "unidirectional, left-to-right prediction scheme"}]}
+{"id": "q38", "question": "Where is the long-term layer placed by default in the 13-layer model?", "evidence": [{"page": 21, "text": "default long-term layer position at layer 8"}]}
+{"id": "q39", "question": "On which hardware were MELODI's training and test times measured?", "evidence": [{"page": 23, "text": "on TPU v6e"}]}
+{"id": "q40", "question": "How close is MELODI S128+L64 to Transformer XL in test speed?", "evidence": [{"page": 23, "text": "0.022 vs. 0.023 seconds"}]}

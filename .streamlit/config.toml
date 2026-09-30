@@ -1,0 +1,6 @@
+# Match the API's upload limit (RAG_MAX_UPLOAD_MB, 25 MB by default); change both together.
+[server]
+maxUploadSize = 25
+
+[client]
+toolbarMode = "minimal"
