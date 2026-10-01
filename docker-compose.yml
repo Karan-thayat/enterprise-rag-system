@@ -1,0 +1,26 @@
+# docker compose up --build   ->  API on http://localhost:8000, UI on http://localhost:8501
+services:
+  api:
+    build: .
+    image: enterprise-rag-system
+    env_file:
+      - path: .env
+        required: false
+    ports:
+      - "8000:8000"
+    volumes:
+      - rag-data:/home/app/data
+
+  ui:
+    build: .
+    image: enterprise-rag-system
+    command: ["streamlit", "run", "frontend.py", "--server.address=0.0.0.0", "--server.port=8501"]
+    environment:
+      RAG_API_URL: http://api:8000
+    ports:
+      - "8501:8501"
+    depends_on:
+      - api
+
+volumes:
+  rag-data:

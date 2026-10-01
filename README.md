@@ -6,9 +6,24 @@ Ask questions about your PDFs and get answers that cite the exact pages they cam
 
 Documents are parsed, chunked, embedded and searched **locally on CPU**. Hybrid retrieval (BM25 + dense vectors, fused with Reciprocal Rank Fusion) and a cross-encoder reranker pick the passages; only those few passages, the question and recent chat turns are sent to an LLM (OpenAI's open-weight GPT-OSS 20B, served by Groq) to write the answer.
 
+![Asking a question about the sample paper: the answer cites pages, and the sources panel shows the passages](docs/demo.gif)
+
 ## Results
 
-On a hand-labelled set of 40 questions about a 23-page research paper ([details](eval/results.md)):
+**On a public benchmark.** [QASPER](https://huggingface.co/datasets/allenai/qasper) has 1,451 test questions about 416 NLP papers that the models never saw. Each question is answered against its own paper with the application's retrieval code, and a passage counts as correct when it comes from a paragraph the annotators marked as evidence ([full report](eval/qasper_results.md)). On the 1,351 test questions with marked evidence:
+
+| Retrieval pipeline | Hit@1 | Hit@4 | MRR@10 |
+|---|---:|---:|---:|
+| Dense search only | 27.5% | 58.6% | 0.431 |
+| Hybrid: BM25 + dense, fused with RRF | 29.2% | 60.3% | 0.448 |
+| + off-the-shelf cross-encoder reranker (app default) | 39.9% | 70.3% | 0.544 |
+| + embedder and reranker fine-tuned on QASPER's train split | **49.4%** | **81.2%** | **0.642** |
+
+Hit@4 is what the LLM sees. Fine-tuning ran on a Kaggle T4 with every choice made on the dev split; its MRR@10 gain on test is +0.098 (95% CI +0.082 to +0.114). Nearly all of it comes from the reranker, and only after *denoising* its hard negatives: QASPER annotators don't mark every supporting paragraph, and a first attempt that trained on those unmarked paragraphs as negatives ended up worse than the off-the-shelf model.
+
+Answers to 100 random test questions, scored with QASPER's official metrics (the scorer reproduces the official evaluator's numbers exactly): Answer F1 0.247, Evidence F1 0.522. Part of the gap is phrasing, since the official F1 penalises full-sentence answers against short references: on average 56.5% of a reference answer's words appear in the reply, and 7 of 10 yes/no questions are answered correctly. The rest is over-caution: the model refused 21 of 83 answerable questions, 16 of them with passages from the evidence paragraphs in its prompt.
+
+**On the sample paper.** A hand-labelled set of 40 questions about the 23-page MELODI paper ([details](eval/results.md)):
 
 | Retrieval pipeline | Hit@1 | Hit@3 | Hit@5 | MRR@10 |
 |---|---:|---:|---:|---:|
@@ -73,6 +88,7 @@ Parsing, embedding, search and reranking run on your machine. The Groq API only 
 - **Cited, grounded answers.** Sources are numbered `[1]`, `[2]`, … with file name and page, and the prompt instructs the model to answer only from them, cite them, or say the answer isn't in the documents. It also marks retrieved text as untrusted, a basic defence against instructions hidden inside documents.
 - **Conversational follow-ups.** "What about its limitations?" is rewritten into a standalone query before retrieval, so the search looks for what the follow-up actually refers to.
 - **Document management.** Uploads are de-duplicated by content hash; documents can be listed and deleted, and chunk IDs are namespaced per document so one upload can never overwrite another.
+- **Fine-tuned retrieval models (optional).** The jobs in `kaggle/` fine-tune the embedder (contrastive loss with hard negatives) and the reranker (listwise loss with teacher-denoised hard negatives) on QASPER, on a free Kaggle GPU. Point `RAG_EMBEDDING_MODEL` and `RAG_RERANKER_MODEL` at the resulting folders to use them, and re-upload documents after changing the embedder, because stored vectors come from the old model. On the sample paper, which is not part of QASPER, they also score slightly higher (Hit@3 92.5% vs 87.5%, [details](eval/results_finetuned.md)).
 - **Responsive API.** Parsing, embedding and LLM calls run in FastAPI's thread pool, so a long upload doesn't stall other requests: a request sent during a 14-second upload now answers in 0.01 s, where the original `async` endpoints made it wait 12 s.
 
 ## Quickstart
@@ -99,6 +115,12 @@ streamlit run frontend.py            # opens the chat UI in your browser
 ```
 
 The first start downloads the embedding and reranking models (about 180 MB) from Hugging Face. Without `GROQ_API_KEY` the API still ingests and searches; only `/ask` returns 503.
+
+Or run both with Docker, which bakes the models into the image and reads `GROQ_API_KEY` from `.env`:
+
+```bash
+docker compose up --build            # API on :8000, UI on http://localhost:8501
+```
 
 ## API
 
@@ -131,17 +153,19 @@ Settings are read from environment variables or `.env` (see [`.env.example`](.en
 
 `python -m eval.run_eval` rebuilds the index for each configuration and scores it against [`eval/golden_set.jsonl`](eval/golden_set.jsonl): 40 questions about the [MELODI paper](eval/data/melodi_iclr2025.pdf) (ICLR 2025), each labelled with verbatim evidence phrases and their page. The script first checks every phrase against the parsed PDF, so a labelling mistake stops the run instead of skewing the numbers. It writes [`eval/results.md`](eval/results.md), which also contains a chunk-size ablation.
 
+For QASPER, `eval/qasper.py` loads the official release and runs the retrieval code per paper, `eval/run_qasper.py` and the scripts in `kaggle/` run the benchmark and the fine-tuning on a Kaggle GPU, `eval/qasper_answers.py` generates and scores answers locally with Groq, and `eval/qasper_report.py` writes [`eval/qasper_results.md`](eval/qasper_results.md) from the raw result files. The exact commands are at the end of that report.
+
 The two questions the current pipeline still misses in the top 5 are recall failures: the answering passage ranks 51st or lower in both the dense and BM25 lists, so it never reaches the reranker. "What does the name MELODI stand for?" shares no words with the paper's "short for …" phrasing, and "Which research lab are the authors from?" requires knowing that Google DeepMind is a research lab.
 
 ## Tests
 
 ```bash
 pip install -r requirements-dev.txt
-pytest                    # 67 tests, offline: no models, parser CLI or API key needed
+pytest                    # 79 tests, offline: no models, parser CLI or API key needed
 ruff check . && ruff format --check .
 ```
 
-The tests swap in a hashing embedder, a fake parser and a fake Groq client. They cover chunking invariants, hybrid retrieval and RRF, citation prompts, follow-up rewriting, every API error path and the Streamlit UI (run headlessly with `AppTest`). GitHub Actions runs lint and tests on pushes to `main` and on pull requests.
+The tests swap in a hashing embedder, a fake parser and a fake Groq client. They cover chunking invariants, hybrid retrieval and RRF, citation prompts, follow-up rewriting, every API error path, the Streamlit UI (run headlessly with `AppTest`), and the QASPER loading, metrics, hard-negative mining and answer scoring. GitHub Actions runs lint and tests on pushes to `main` and on pull requests, and builds the Docker image, starts it and indexes the sample PDF inside it.
 
 ## Project structure
 
@@ -158,7 +182,9 @@ app/
   schemas.py          request and response models
   config.py           settings from environment variables
 frontend.py           Streamlit chat UI
-eval/                 golden question set, evaluation script, results
+eval/                 golden question set, QASPER benchmark, training and scoring scripts, results
+kaggle/               GPU jobs for the QASPER benchmark and fine-tuning, and their launcher
+docs/                 demo recording
 tests/                offline test suite
 ```
 
@@ -166,7 +192,8 @@ tests/                offline test suite
 
 - **Single tenant, no authentication.** Every user shares one index; per-user collections and auth would come first for real deployment.
 - **One process.** Chroma runs embedded and the BM25 index lives in memory, rebuilt after each upload, which is fine for thousands of chunks but not for horizontal scaling. A Chroma server or pgvector plus a search engine would replace both.
-- **Answer quality isn't scored automatically yet.** The evaluation measures retrieval; faithfulness and citation accuracy of generated answers need an LLM-judged or human-labelled set.
-- **Recall on paraphrased questions.** A stronger embedding model, a larger candidate pool or query expansion (e.g. HyDE) would target the misses above; running page headers could be stripped before indexing.
+- **Answer quality is only partly measured.** QASPER's metrics compare answers with references, not whether every claim is supported by the passage it cites; that needs a faithfulness judge checked against human labels. The model also refuses answerable questions too often.
+- **Fine-tuned models are trained on NLP papers.** They help on QASPER and don't hurt on the sample paper, but other document types, such as contracts or manuals, are untested.
+- **Recall on paraphrased questions.** Fine-tuning raised QASPER candidate recall@20 from 93.3% to 95.8%, but the two sample-paper misses remain; query expansion (e.g. HyDE) would target them, and running page headers could be stripped before indexing.
 - **Side-by-side layouts.** Because LiteParse preserves the page's spatial layout, two text columns or a caption beside a paragraph come out interleaved line by line, which can split sentences across chunks.
-- **No streaming or containerisation yet.** Answers arrive in one piece, and there is no Dockerfile.
+- **No streaming.** Answers arrive in one piece.

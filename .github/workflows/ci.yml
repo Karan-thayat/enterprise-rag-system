@@ -28,3 +28,20 @@ jobs:
       # The tests use in-memory fakes: no model downloads, LiteParse CLI or API key needed.
       - name: Test
         run: pytest
+
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Build image
+        run: docker build -t enterprise-rag-system .
+
+      # Starts the API container, waits for it, then indexes the sample PDF, which
+      # exercises the LiteParse CLI and OCR inside the image.
+      - name: Smoke test
+        run: |
+          docker run -d --name api -p 8000:8000 enterprise-rag-system
+          for i in $(seq 1 60); do curl -sf localhost:8000/health && break; sleep 2; done
+          curl -sf -F "file=@eval/data/melodi_iclr2025.pdf" localhost:8000/upload > upload.json || { docker logs api; exit 1; }
+          python3 -c "import json; d = json.load(open('upload.json'))['document']; print(d); assert d['pages'] == 23 and d['chunks'] > 100"

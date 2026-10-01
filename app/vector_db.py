@@ -1,11 +1,11 @@
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any
-
-import chromadb
+from typing import TYPE_CHECKING, Any
 
 from app.chunking import Chunk
-from app.embeddings import Embedder
+
+if TYPE_CHECKING:
+    from app.embeddings import Embedder
 
 
 @dataclass(frozen=True)
@@ -29,7 +29,11 @@ class DocumentSummary:
 class VectorStore:
     """A persistent Chroma collection of chunk embeddings plus citation metadata."""
 
-    def __init__(self, path: str, collection_name: str, embedder: Embedder):
+    def __init__(self, path: str, collection_name: str, embedder: "Embedder"):
+        # Imported here so the lightweight parts of this module (RetrievedChunk) can be
+        # used by the evaluation and training scripts without installing Chroma.
+        import chromadb
+
         self.embedder = embedder
         self._client = chromadb.PersistentClient(
             path=path, settings=chromadb.Settings(anonymized_telemetry=False)

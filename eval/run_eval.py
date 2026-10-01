@@ -193,6 +193,7 @@ def main() -> None:
     arguments.add_argument("--pdf", type=Path, default=DEFAULT_PDF)
     arguments.add_argument("--golden", type=Path, default=DEFAULT_GOLDEN)
     arguments.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    arguments.add_argument("--title", default="Retrieval evaluation")
     args = arguments.parse_args()
 
     settings = get_settings()
@@ -236,7 +237,7 @@ def main() -> None:
     misses = ", ".join(retrieval_rows[-1]["misses"]) or "none"
 
     lines = [
-        "# Retrieval evaluation",
+        f"# {args.title}",
         "",
         f"- **Corpus:** `{args.pdf.name}` ({len(pages)} pages), parsed with LiteParse "
         f"(OCR {'on' if settings.ocr_enabled else 'off'})",
