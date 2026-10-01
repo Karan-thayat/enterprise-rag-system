@@ -1,0 +1,11 @@
+**Where the judge and the annotators disagree.** Of the 8 hallucinated responses the judge missed, 4 contain added sentences it never turned into claims (generic advice, a hedge, a rationale, and one response for which it returned no claims at all), 2 have errors about the passages themselves (a false statement about what a passage contains, and correct content cited to the wrong passage; the judge checks claims against all passages and ignores citation numbers), 1 adds acronym expansions inside an otherwise supported claim, and 1 is unclear. Its 8 false alarms mostly flag problems the annotators did not mark: general-knowledge elaborations, a factual error (an NPN transistor's base described as n-type), "work-in-progress" given for written-down value, a false claim that the passages say nothing about survival kits, and a garbled rain-probability figure. The judge is therefore stricter than RAGTruth's annotators about additions, which suits an assistant that must stay within its documents, and it does not verify citation numbers.
+
+## Why the prompt changed
+
+On the 100-question dev sample, the baseline refused 24 of the 87 answerable questions, including 6 of the 10 yes/no questions. In 12 of the 24, no evidence paragraph was among the retrieved passages, so refusing was the grounded choice. Reading the other 12:
+
+- 3 were correct refusals: the marked paragraph does not contain the answer, which is in a figure or table ("How many layers does the UTCNN model have?").
+- 3 were yes/no questions that the passages settle by clear implication. Asked "Is the LSTM baseline a sub-word model?", the model had a passage saying the authors used morfessor sub-word tokenization "to remain consistent with experiments performed with LSTMs".
+- 6 had part of the answer in the passages, such as "reaching 0.92 F1-score" for a question about how much multimodal features improved performance.
+
+The candidate prompt, `partial_answers` in [prompts.py](prompts.py), keeps the fixed refusal for sources with nothing relevant and changes two things: answer the part of a question the sources support and say what they leave out, and answer yes/no questions that the sources settle directly or by clear implication, starting with "Yes" or "No".

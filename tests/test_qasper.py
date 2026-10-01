@@ -1,18 +1,25 @@
+import time
 from dataclasses import replace
+from types import SimpleNamespace
 
+import groq
+import httpx
 import pytest
 
 from app.llm_generator import NOT_FOUND_ANSWER
 from eval.hard_negatives import mine_examples
 from eval.qasper import first_relevant_rank, index_papers, parse_papers, retrieval_metrics
 from eval.qasper_answers import (
+    call_with_retries,
     paragraph_f1,
     refusal_breakdown,
+    retry_after,
     score,
     summarize,
     to_prediction,
     token_f1,
     token_recall,
+    usage_dict,
 )
 from eval.run_qasper import (
     evaluate,
@@ -161,6 +168,12 @@ def test_export_passages_keeps_official_evidence_strings(paper, embedder):
     assert all(len(item["passages"]) <= 4 for item in exported)
 
 
+def test_export_passages_can_sample_only_unanswerable_questions(paper, embedder):
+    indexed = index_papers([paper], embedder)
+    exported = export_passages(indexed, hybrid_ranker(embedder), sample_size=3, only_unanswerable=True)
+    assert [item["question_id"] for item in exported] == ["q2"]
+
+
 def test_answer_scoring_matches_the_official_definitions():
     assert token_f1("the Paris", "Paris.") == 1.0
     assert token_f1("in Paris France", "Paris") == pytest.approx(0.5)
@@ -247,3 +260,64 @@ def test_refusal_breakdown_separates_retrieval_misses_from_declines():
         "refused_with_evidence_in_context": 1,
         "refused_after_retrieval_miss": 1,
     }
+
+
+def rate_limit(message):
+    request = httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions")
+    return groq.RateLimitError(message, response=httpx.Response(429, request=request), body=None)
+
+
+def test_usage_separates_cached_prompt_tokens():
+    usage = SimpleNamespace(
+        prompt_tokens=900, completion_tokens=120, prompt_tokens_details=SimpleNamespace(cached_tokens=640)
+    )
+    assert usage_dict(usage) == {"prompt_tokens": 900, "cached_tokens": 640, "completion_tokens": 120}
+    uncached = SimpleNamespace(prompt_tokens=5, completion_tokens=1, prompt_tokens_details=None)
+    assert usage_dict(uncached)["cached_tokens"] == 0
+    assert usage_dict(None) is None
+
+
+def test_per_minute_limits_are_waited_out_but_a_spent_daily_quota_stops_the_run(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(time, "sleep", sleeps.append)
+    outcomes = iter([rate_limit("Rate limit reached on tokens per minute (TPM)"), "answer"])
+
+    def flaky(question):
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return f"{outcome} to {question}"
+
+    assert call_with_retries(flaky, "q") == "answer to q"
+    assert sleeps == [60]
+
+    def spent(question):
+        raise rate_limit(
+            "Rate limit reached on tokens per day (TPD): Limit 200000, Used 199800. "
+            "Please try again in 7m5.2s."
+        )
+
+    with pytest.raises(SystemExit, match=r"daily .* retrying in 425 s"):
+        call_with_retries(spent, "q")
+    assert sleeps == [60]  # no waiting on a quota that only resets later
+
+
+def test_retry_after_reads_groqs_hint():
+    assert retry_after("Please try again in 7m5.2s.") == 425.2
+    assert retry_after("Please try again in 1h2m3s.") == 3723
+    assert retry_after("Rate limit reached") is None
+
+
+def test_waiting_for_quota_sleeps_as_suggested_and_carries_on(monkeypatch):
+    sleeps = []
+    monkeypatch.setattr(time, "sleep", sleeps.append)
+    outcomes = iter([rate_limit("tokens per day (TPD): Used 199800. Please try again in 8m1.5s."), "answer"])
+
+    def refilling(question):
+        outcome = next(outcomes)
+        if isinstance(outcome, Exception):
+            raise outcome
+        return outcome
+
+    assert call_with_retries(refilling, "q", wait_for_quota=True) == "answer"
+    assert sleeps == [486.5]  # the suggested 8m1.5s plus a 5 s margin

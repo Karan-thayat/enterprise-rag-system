@@ -1,10 +1,13 @@
 import json
+from types import SimpleNamespace
 
 import httpx
 import pytest
 from groq import Groq
 
 from app.llm_generator import (
+    ANSWER_SYSTEM_PROMPT,
+    ANSWER_USER_TEMPLATE,
     NOT_FOUND_ANSWER,
     REWRITE_SYSTEM_PROMPT,
     LLMClient,
@@ -120,3 +123,37 @@ def test_native_citation_style_is_normalised():
     reply = "Adafactor 【1】【2】, dropout 0.05 【3†L4-L9】, see [4]."
     llm = LLMClient("openai/gpt-oss-20b", client=FakeChatClient(replies=[reply]))
     assert llm.generate_answer("q", [], []) == "Adafactor [1][2], dropout 0.05 [3], see [4]."
+
+
+def test_system_prompt_can_be_swapped_for_experiments():
+    client = FakeChatClient(replies=["Answer [1]."])
+    LLMClient("test-model", client=client, system_prompt="Custom rules.").generate_answer("q", [], [])
+    assert client.calls[0]["messages"][0] == {"role": "system", "content": "Custom rules."}
+
+
+def test_last_usage_keeps_the_token_counts_of_the_latest_call():
+    usage = SimpleNamespace(prompt_tokens=12, completion_tokens=3)
+    response = SimpleNamespace(
+        choices=[SimpleNamespace(message=SimpleNamespace(content="Hi [1]."))], usage=usage
+    )
+    client = SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=lambda **_: response)))
+    llm = LLMClient("test-model", client=client)
+    assert llm.last_usage is None
+    llm.generate_answer("q", [], [])
+    assert llm.last_usage is usage
+
+
+def test_the_application_runs_a_prompt_that_was_evaluated():
+    from eval.prompts import PROMPTS, Prompt
+
+    assert Prompt(ANSWER_SYSTEM_PROMPT, ANSWER_USER_TEMPLATE) in PROMPTS.values()
+
+
+def test_the_question_can_come_first_with_the_sources_fenced():
+    client = FakeChatClient(replies=["Answer [1]."])
+    chunk = RetrievedChunk("d:0", "As an example, consider the schema:", "d", "paper.pdf", 2)
+    template = "Question: {question}\n\n<sources>\n{sources}\n</sources>"
+    LLMClient("test-model", client=client, user_template=template).generate_answer("Who?", [chunk], [])
+    assert client.calls[0]["messages"][-1]["content"] == (
+        "Question: Who?\n\n<sources>\n[1] paper.pdf, page 2\nAs an example, consider the schema:\n</sources>"
+    )

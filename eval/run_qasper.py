@@ -5,6 +5,9 @@ annotator. Only questions with at least one evidence paragraph are scored.
 
 Usage (CPU works for a few papers; the full splits are run on a GPU, see kaggle/):
     python -m eval.run_qasper --split dev --limit-papers 20
+    python -m eval.run_qasper --split dev --export-passages 100 --output eval/.cache/dev_passages.json
+    python -m eval.run_qasper --split dev --export-passages 60 --only-unanswerable \
+        --output eval/.cache/dev_unanswerable_passages.json
 """
 
 import argparse
@@ -105,10 +108,22 @@ def hit_at_1(rank: int | None) -> float:
 
 
 def export_passages(
-    indexed_papers: list[IndexedPaper], ranker: Ranker, sample_size: int, seed: int = 0
+    indexed_papers: list[IndexedPaper],
+    ranker: Ranker,
+    sample_size: int,
+    seed: int = 0,
+    only_unanswerable: bool = False,
 ) -> list[dict]:
-    """Top chunks for a random sample of questions (answerable or not), for answer scoring."""
-    everything = [(indexed, question) for indexed in indexed_papers for question in indexed.paper.questions]
+    """Top chunks for a random sample of questions (answerable or not), for answer scoring.
+
+    ``only_unanswerable`` samples just the questions every annotator marked unanswerable.
+    """
+    everything = [
+        (indexed, question)
+        for indexed in indexed_papers
+        for question in indexed.paper.questions
+        if not only_unanswerable or all(ref["type"] == "none" for ref in question.references)
+    ]
     sample = random.Random(seed).sample(everything, min(sample_size, len(everything)))
     exported = []
     for indexed, question in sample:
@@ -146,12 +161,34 @@ def main() -> None:
     arguments.add_argument("--embedding-model", default="sentence-transformers/all-MiniLM-L6-v2")
     arguments.add_argument("--device", default="cpu")
     arguments.add_argument("--output", type=Path, default=None)
+    arguments.add_argument(
+        "--export-passages",
+        type=int,
+        default=0,
+        metavar="N",
+        help="instead of the benchmark, write the LLM's passages for N random questions to --output",
+    )
+    arguments.add_argument(
+        "--only-unanswerable",
+        action="store_true",
+        help="with --export-passages, sample only questions every annotator marked unanswerable",
+    )
     args = arguments.parse_args()
 
     papers = load_split(args.split)[: args.limit_papers]
     embedder = Embedder(args.embedding_model, device=args.device)
     reranker = CrossEncoderReranker(args.reranker, device=args.device)
     indexed = index_papers(papers, embedder)
+    if args.export_passages:
+        if args.output is None:
+            raise SystemExit("--export-passages needs --output")
+        ranker = hybrid_ranker(embedder, reranker)
+        passages = export_passages(
+            indexed, ranker, args.export_passages, only_unanswerable=args.only_unanswerable
+        )
+        args.output.write_text(json.dumps(passages, indent=1))
+        print(f"Wrote passages for {len(passages)} {args.split} questions to {args.output}")
+        return
     rows = [
         summary_row("Dense only", evaluate(indexed, dense_ranker(embedder))),
         summary_row("BM25 only", evaluate(indexed, bm25_ranker())),

@@ -10,3 +10,5 @@ select = ["E", "F", "W", "I", "B", "UP", "SIM"]
 
 [tool.ruff.lint.per-file-ignores]
 "eval/qasper_report.py" = ["E501"]  # long Markdown prose lines in the report template
+"eval/answer_report.py" = ["E501"]  # long Markdown prose lines in the report template
+"eval/faithfulness.py" = ["E501"]  # the judge prompt is prose; wrapping would add newlines to it

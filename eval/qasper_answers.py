@@ -10,6 +10,8 @@ official evaluator does:
 
 Usage:
     python -m eval.qasper_answers --passages eval/.cache/kaggle-output/answer_passages.json
+    python -m eval.qasper_answers --passages eval/.cache/dev_passages.json --prompt baseline \
+        --output eval/.cache/answers_dev_baseline.jsonl
 """
 
 import argparse
@@ -25,6 +27,7 @@ import groq
 from app.config import get_settings
 from app.llm_generator import NOT_FOUND_ANSWER, LLMClient
 from app.vector_db import RetrievedChunk
+from eval.prompts import PROMPTS
 
 CITATION = re.compile(r"\[(\d+)\]")
 PUNCTUATION = set(string.punctuation)
@@ -126,13 +129,63 @@ def summarize(scored: list[dict]) -> dict:
     }
 
 
+def usage_dict(usage) -> dict | None:
+    """Token counts from an API usage object; cached prompt tokens don't count towards Groq's limits."""
+    if usage is None:
+        return None
+    details = getattr(usage, "prompt_tokens_details", None)
+    return {
+        "prompt_tokens": usage.prompt_tokens,
+        "cached_tokens": getattr(details, "cached_tokens", None) or 0,
+        "completion_tokens": usage.completion_tokens,
+    }
+
+
+def retry_after(message: str) -> float | None:
+    """Seconds from a Groq rate-limit message's "Please try again in 1h2m3.5s" hint."""
+    match = re.search(r"try again in ([0-9hms.]+)", message)
+    if not match:
+        return None
+    parts = re.findall(r"([\d.]+)([hms])", match.group(1))
+    return sum(float(value) * {"h": 3600, "m": 60, "s": 1}[unit] for value, unit in parts) or None
+
+
+def call_with_retries(function, *args, attempts: int = 3, wait_for_quota: bool = False):
+    """Waits out per-minute rate limits. A used-up daily quota ends the run so it can resume later,
+    or, with ``wait_for_quota``, waits as long as Groq suggests: the daily budget refills continuously."""
+    failures = 0
+    while True:
+        try:
+            return function(*args)
+        except groq.RateLimitError as error:
+            wait = retry_after(str(error))
+            if "per day" in str(error):
+                if wait_for_quota:
+                    time.sleep((wait or 300) + 5)
+                    continue
+                hint = f" (Groq suggests retrying in {wait:.0f} s)" if wait else ""
+                raise SystemExit(
+                    f"Groq's daily token limit is used up; rerun later to resume{hint}."
+                ) from error
+            failures += 1
+            if failures >= attempts:
+                raise SystemExit("Groq kept rate limiting; rerun later to resume.") from error
+            time.sleep(wait or 60 * failures)
+
+
 def main() -> None:
     arguments = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     arguments.add_argument("--passages", type=Path, required=True)
     arguments.add_argument("--output", type=Path, default=Path("eval/.cache/qasper_answers.jsonl"))
+    arguments.add_argument("--prompt", choices=sorted(PROMPTS), default="baseline")
     arguments.add_argument("--limit", type=int, default=None)
     arguments.add_argument(
         "--pace-seconds", type=float, default=12.0, help="stay under Groq's free-tier limits"
+    )
+    arguments.add_argument(
+        "--wait-for-quota",
+        action="store_true",
+        help="wait for Groq's daily budget to refill instead of stopping",
     )
     args = arguments.parse_args()
 
@@ -144,6 +197,8 @@ def main() -> None:
         max_tokens=settings.llm_max_tokens,
         reasoning_effort=settings.llm_reasoning_effort,
         api_key=api_key,
+        system_prompt=PROMPTS[args.prompt].system,
+        user_template=PROMPTS[args.prompt].user_template,
     )
     items = json.loads(args.passages.read_text())[: args.limit]
 
@@ -151,6 +206,8 @@ def main() -> None:
     if args.output.exists():  # resume an interrupted run instead of paying for answers twice
         for line in args.output.read_text().splitlines():
             record = json.loads(line)
+            if record.get("prompt", "baseline") != args.prompt:
+                raise SystemExit(f"{args.output} holds answers from another prompt; use a new --output")
             done[record["question_id"]] = record
     with args.output.open("a") as out:
         for item in items:
@@ -160,18 +217,15 @@ def main() -> None:
                 RetrievedChunk(p["chunk_id"], p["text"], item["paper_id"], "paper", p["paragraph"] + 1)
                 for p in item["passages"]
             ]
-            for attempt in range(3):
-                try:
-                    answer = llm.generate_answer(item["question"], chunks, [])
-                    break
-                except groq.RateLimitError:
-                    time.sleep(60 * (attempt + 1))
-            else:
-                raise SystemExit("Groq kept rate limiting; rerun later to resume.")
+            answer = call_with_retries(
+                llm.generate_answer, item["question"], chunks, [], wait_for_quota=args.wait_for_quota
+            )
             prediction, evidence = to_prediction(answer, item["passages"])
             record = {
                 "question_id": item["question_id"],
                 "question": item["question"],
+                "prompt": args.prompt,
+                "usage": usage_dict(llm.last_usage),
                 "answer": answer,
                 "predicted_answer": prediction,
                 "predicted_evidence": evidence,
